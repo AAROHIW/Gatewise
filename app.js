@@ -1,95 +1,112 @@
 const express = require('express');
-
 const app = express();
+
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
-// In-memory visitor list
+// In-memory visitor storage[cite: 6]
 const visitors = [];
 
-// Escape HTML characters for safety
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+// Helper to escape user input and prevent XSS script injection[cite: 6]
+const esc = (s) => String(s || '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-// Read git SHA from environment variables
-const sha = process.env.GIT_SHA || process.env.RENDER_GIT_COMMIT || 'local';
+// Extract commit hash from environment variables[cite: 5, 6]
+const sha = process.env.RENDER_GIT_COMMIT || process.env.GIT_SHA || 'local';
 const commit = sha.slice(0, 7);
 
-// GET / - Home page
+// GET / - Render main Visitor Log page
 app.get('/', (req, res) => {
-  const visitorRows = visitors
-    .map(
-      (v) =>
-        `<tr>
-          <td>${v.id}</td>
-          <td><b>${esc(v.name)}</b></td>
-          <td>${esc(v.phone)}</td>
-          <td>${esc(v.purpose)}</td>
-          <td>${esc(v.host)}</td>
-        </tr>`
-    )
-    .join('');
+  const visitorRows = visitors.length > 0
+    ? visitors
+        .map(
+          (v) =>
+            `<tr>
+              <td>${v.id}</td>
+              <td><b>${esc(v.name)}</b></td>
+              <td>${esc(v.phone)}</td>
+              <td>${esc(v.purpose)}</td>
+              <td>${esc(v.host)}</td>
+              <td>${new Date(v.checkInTime).toLocaleTimeString()}</td>
+            </tr>`
+        )
+        .join('')
+    : `<tr><td colspan="6" style="text-align: center;">No visitors checked in yet.</td></tr>`;
 
-  res.send(`<!DOCTYPE html>
-<html>
-<head>
-  <title>Gatewise - Visitor Management System</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 30px; line-height: 1.6; }
-    form { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
-    input { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
-    button { padding: 8px 16px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-    th { background-color: #f4f4f4; }
-    footer { margin-top: 30px; font-size: 0.9em; color: #666; border-top: 1px solid #ddd; padding-top: 10px; }
-  </style>
-</head>
-<body>
-  <h1>Gatewise - Visitor Management System</h1>
-  
-  <h3>Check-in New Visitor</h3>
-  <form method="POST" action="/checkin">
-    <input name="name" placeholder="Visitor Name" required />
-    <input name="phone" placeholder="Phone Number" required />
-    <input name="purpose" placeholder="Purpose of Visit" required />
-    <input name="host" placeholder="Host / Person to Meet" required />
-    <button type="submit">Check In</button>
-  </form>
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Gatewise - Visitor Management System</title>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 30px; background-color: #f8f9fa; color: #333; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #0056b3; margin-bottom: 5px; }
+        .subtitle { color: #6c757d; margin-bottom: 25px; }
+        form { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px; background: #f1f3f5; padding: 20px; border-radius: 6px; }
+        form input { padding: 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px; }
+        form button { grid-column: span 2; padding: 12px; background-color: #28a745; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; font-weight: bold; }
+        form button:hover { background-color: #218838; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
+        th { background-color: #0056b3; color: white; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        footer { margin-top: 40px; text-align: center; font-size: 0.85em; color: #6c757d; border-top: 1px solid #dee2e6; padding-top: 15px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>Gatewise VMS</h1>
+        <p class="subtitle">Campus Visitor Management System</p>
+        
+        <h2>Check-in New Visitor</h2>
+        <form method="POST" action="/checkin">
+          <input name="name" placeholder="Visitor Full Name" required>
+          <input name="phone" placeholder="Phone Number" required>
+          <input name="purpose" placeholder="Purpose of Visit" required>
+          <input name="host" placeholder="Host / Person to Meet" required>
+          <button type="submit">Check In Visitor</button>
+        </form>
 
-  <h3>Visitor Log</h3>
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Visitor Name</th>
-        <th>Phone</th>
-        <th>Purpose</th>
-        <th>Host</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${visitorRows || '<tr><td colspan="5">No visitors checked in yet.</td></tr>'}
-    </tbody>
-  </table>
+        <h2>Recent Visitor Logs (${visitors.length})</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Visitor Name</th>
+              <th>Phone</th>
+              <th>Purpose</th>
+              <th>Host</th>
+              <th>Check-in Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${visitorRows}
+          </tbody>
+        </table>
 
-  <footer>commit ${commit}</footer>
-</body>
-</html>`);
+        <footer>commit ${commit}</footer>
+      </div>
+    </body>
+    </html>
+  `);
 });
 
-// POST /checkin - Form submission
+// POST /checkin - Submit check-in form[cite: 5, 6]
 app.post('/checkin', (req, res) => {
   const { name, phone, purpose, host } = req.body;
+
+  // Validate inputs
   if (!name || !phone || !purpose || !host) {
-    return res.status(400).send('All fields are required.');
+    return res.status(400).send('All fields are required');
   }
 
   const newVisitor = {
     id: visitors.length + 1,
-    name,
-    phone,
-    purpose,
-    host,
+    name: name.trim(),
+    phone: phone.trim(),
+    purpose: purpose.trim(),
+    host: host.trim(),
     checkInTime: new Date().toISOString()
   };
 
@@ -97,12 +114,12 @@ app.post('/checkin', (req, res) => {
   res.redirect('/');
 });
 
-// GET /api/visitors - JSON API route
+// GET /api/visitors - JSON API endpoint[cite: 5, 6]
 app.get('/api/visitors', (req, res) => {
   res.json(visitors);
 });
 
-// GET /health - Health check endpoint
+// GET /health - Health check endpoint[cite: 5, 6]
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', commit });
 });
